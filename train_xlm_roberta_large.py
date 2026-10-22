@@ -1,12 +1,23 @@
 # MODEL: FacebookAI/xlm-roberta-large
 # RMIT Hackathon 2026 - Multilingual Prompt Classification
-# Backbone: XLM-RoBERTa-large with Head+Tail Tokenization & Class-Weighted Loss
+# Unified 5-Fold Training Pipeline for Team
+# ==============================================================================
+# HƯỚNG DẪN DÀNH CHO CẢ NHÓM (TEAM RUN):
+# Mỗi thành viên mở 1 Notebook riêng trên Kaggle và chỉ cần đổi DUY NHẤT dòng:
+#   TARGET_FOLD = 0   <-- Đổi thành 0, 1, 2, 3 hoặc 4 tùy theo fold bạn nhận!
+# Cấu hình: GPU T4 x 2 (hoặc P100), Internet ON (hoặc add offline model).
+# Chạy 2 Epochs/fold (~18-22 phút).
+# Kết thúc sẽ xuất ra:
+#   1. test_probs_fold_{TARGET_FOLD}.npy (gửi file này cho trưởng nhóm để gộp)
+#   2. submission_fold_{TARGET_FOLD}.csv (file nộp bài riêng của fold)
+# ==============================================================================
 
 import os
 import sys
 import gc
 import json
 import random
+import argparse
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
@@ -24,28 +35,27 @@ from transformers import (
 )
 
 # ==============================================================================
-# 1. CẤU HÌNH SIÊU THAM SỐ (CONFIG)
+# 1. CẤU HÌNH DÙNG CHUNG CHO CẢ NHÓM (CONFIG)
 # ==============================================================================
 class Config:
+    # -------------------------------------------------------------
+    # THÀNH VIÊN SỬA DÒNG NÀY: CHỌN FOLD BẠN ĐƯỢC PHÂN CÔNG (0, 1, 2, 3, 4)
+    target_fold = 0
+    # -------------------------------------------------------------
+    
+    n_splits = 5
     seed = 42
+    epochs = 2              # 2 Epochs theo thống nhất của nhóm
     num_classes = 3
     max_len = 512
     head_len = 256
     tail_len = 256
     
-    # Model backbone: Tự động quét các đường dẫn Kaggle Models mount thực tế
+    # Model backbone
     model_name_or_path = "FacebookAI/xlm-roberta-large"
-    kaggle_candidate_paths = [
-        "/kaggle/input/xlm-roberta-large/transformers/default/1",
-        "/kaggle/input/models/aisuko/xlm-roberta-large/transformers/default/1",
-        "/kaggle/input/models/aisuko/xlm-roberta-large",
-        "/kaggle/input/xlm-roberta-large",
-        "FacebookAI/xlm-roberta-large"
-    ]
     
-    # Training settings
-    epochs = 3
-    batch_size = 8          # T4/P100 (16GB VRAM)
+    # Huấn luyện chống sập VRAM trên GPU 16GB
+    batch_size = 8          
     grad_accum_steps = 2    # Effective batch size = 16
     learning_rate = 1e-5
     weight_decay = 0.01
@@ -53,9 +63,15 @@ class Config:
     max_grad_norm = 1.0
     fp16 = True
     
-    # Loss weights: phạt nặng hơn khi đoán sai lớp hiếm PROMPT_INJECTION (7%)
-    # Thứ tự lớp: [BENIGN, JAILBREAK, PROMPT_INJECTION]
+    # Class weights kéo điểm lớp hiếm 7% PROMPT_INJECTION
+    # [BENIGN, JAILBREAK, PROMPT_INJECTION]
     class_weights = [0.7, 1.2, 3.2]
+
+# Hỗ trợ nhận fold từ dòng lệnh nếu chạy command: python train.py --fold 1
+parser = argparse.ArgumentParser()
+parser.add_argument("--fold", type=int, default=Config.target_fold)
+args, unknown = parser.parse_known_args()
+Config.target_fold = args.fold
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -68,13 +84,17 @@ def seed_everything(seed=42):
 
 seed_everything(Config.seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"--> Using device: {device}")
+print(f"==========================================================")
+print(f"--> Đang chạy FOLD: {Config.target_fold} / {Config.n_splits - 1}")
+print(f"--> Số Epochs: {Config.epochs}")
+print(f"--> Thiết bị sử dụng: {device}")
+print(f"==========================================================")
 
 # ==============================================================================
 # 2. HỆ THỐNG TỰ ĐỘNG DÒ TÌM ĐƯỜNG DẪN DATA & MODEL TRÊN KAGGLE
 # ==============================================================================
 def find_file_recursively(filename, default_dir="."):
-    # 1. Thử đường dẫn mặc định
+    # 1. Thử đường dẫn cục bộ
     local_path = os.path.join(default_dir, filename)
     if os.path.exists(local_path):
         return local_path
@@ -94,22 +114,13 @@ def find_file_recursively(filename, default_dir="."):
 def find_model_dir():
     # Quét tìm thư mục model xlm-roberta-large trong /kaggle/input
     if os.path.exists("/kaggle/input"):
-        print("\n=== CẤU TRÚC THƯ MỤC /kaggle/input HIỆN TẠI ===")
-        for root, dirs, files in os.walk("/kaggle/input"):
-            level = root.replace("/kaggle/input", "").count(os.sep)
-            indent = " " * 4 * level
-            print(f"{indent}📁 {os.path.basename(root)}/")
-            for f in files[:4]:
-                print(f"{indent}    📄 {f}")
-        print("===================================================\n")
-        
         for root, dirs, files in os.walk("/kaggle/input"):
             if "config.json" in files and ("pytorch_model.bin" in files or "model.safetensors" in files or "sentencepiece.bpe.model" in files):
                 print(f"--> [AUTO-FOUND] Đã tìm thấy Model offline tại: {root}")
                 return root
                 
-    print("--> [INFO] Không tìm thấy model offline trong /kaggle/input, sử dụng 'FacebookAI/xlm-roberta-large' tải trực tuyến.")
-    return "FacebookAI/xlm-roberta-large"
+    print(f"--> [INFO] Không tìm thấy model offline, nạp trực tuyến: '{Config.model_name_or_path}'")
+    return Config.model_name_or_path
 
 TRAIN_PATH = find_file_recursively("train.csv", default_dir="./data")
 TEST_PATH = find_file_recursively("test.csv", default_dir="./data")
@@ -135,11 +146,9 @@ class PromptHeadTailDataset(Dataset):
         
     def __getitem__(self, idx):
         text = str(self.texts[idx])
-        
-        # Tokenize không truncate để kiểm tra độ dài thật
         tokens = self.tokenizer.encode(text, add_special_tokens=False)
         
-        # Nếu độ dài vượt quá max_len - 2 (trừ <s> và </s>): cắt Head + Tail
+        # Nếu vượt quá max_len - 2: cắt Head (256) + Tail (256)
         if len(tokens) > (self.max_len - 2):
             head_tokens = tokens[:self.head_len - 1]
             tail_tokens = tokens[-(self.tail_len - 1):]
@@ -149,7 +158,6 @@ class PromptHeadTailDataset(Dataset):
             
         attention_mask = [1] * len(input_ids)
         
-        # Padding thủ công đến max_len
         pad_len = self.max_len - len(input_ids)
         if pad_len > 0:
             input_ids = input_ids + [self.tokenizer.pad_token_id] * pad_len
@@ -166,7 +174,7 @@ class PromptHeadTailDataset(Dataset):
         return item
 
 # ==============================================================================
-# 4. CHUẨN BỊ MÔ HÌNH VÀ TOKENIZER
+# 4. NẠP MODEL VÀ TOKENIZER
 # ==============================================================================
 def get_model_and_tokenizer():
     model_source = find_model_dir()
@@ -174,31 +182,32 @@ def get_model_and_tokenizer():
     tokenizer = AutoTokenizer.from_pretrained(model_source)
     config = AutoConfig.from_pretrained(model_source, num_labels=Config.num_classes)
     model = AutoModelForSequenceClassification.from_pretrained(model_source, config=config)
-    
     return model, tokenizer
 
 # ==============================================================================
-# 5. HÀM HUẤN LUYỆN VÀ ĐÁNH GIÁ (TRAIN & EVAL)
+# 5. HUẤN LUYỆN FOLD ĐƯỢC CHỌN (TRAIN SPECIFIC FOLD)
 # ==============================================================================
-def train_and_predict():
-    print("--> 1. Đang tải dữ liệu...")
+def train_fold():
+    fold = Config.target_fold
+    print(f"\n=======================================================")
+    print(f"🚀 BẮT ĐẦU HUẤN LUYỆN FOLD {fold} (TỔNG {Config.epochs} EPOCHS)")
+    print(f"=======================================================")
+    
     train_df = pd.read_csv(TRAIN_PATH)
     test_df = pd.read_csv(TEST_PATH)
-    
     train_df["target"] = train_df["label"].map(LABEL_MAP)
     
-    # Chia tập Stratified theo cả Label và Ngôn ngữ để đánh giá uy tín
+    # Chia 5 Fold cố định dùng chung cho cả 5 thành viên
     train_df["strat_key"] = train_df["label"].astype(str) + "_" + train_df["language"].astype(str)
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=Config.seed)
+    skf = StratifiedKFold(n_splits=Config.n_splits, shuffle=True, random_state=Config.seed)
     
-    # Chỉ lấy Fold 0 làm Validation (tỷ lệ 80% train, 20% validation)
-    train_idx, val_idx = next(skf.split(train_df, train_df["strat_key"]))
+    splits = list(skf.split(train_df, train_df["strat_key"]))
+    train_idx, val_idx = splits[fold]
+    
     trn_data = train_df.iloc[train_idx].reset_index(drop=True)
     val_data = train_df.iloc[val_idx].reset_index(drop=True)
     
-    print(f"--> Train size: {len(trn_data)}, Val size: {len(val_data)}, Test size: {len(test_df)}")
-    print("--> Phân bố nhãn trong tập Train:")
-    print(trn_data["label"].value_counts(normalize=True))
+    print(f"--> Fold {fold}: Tập Train = {len(trn_data)} mẫu (80%) | Tập Validation = {len(val_data)} mẫu (20%)")
     
     model, tokenizer = get_model_and_tokenizer()
     model.to(device)
@@ -232,11 +241,10 @@ def train_and_predict():
     val_loader = DataLoader(val_dataset, batch_size=Config.batch_size * 2, shuffle=False, num_workers=2, pin_memory=True)
     test_loader = DataLoader(test_dataset, batch_size=Config.batch_size * 2, shuffle=False, num_workers=2, pin_memory=True)
     
-    # Thiết lập Loss có trọng số lớp (Class Weights)
+    # Class-Weighted Cross Entropy
     class_weights_tensor = torch.tensor(Config.class_weights, dtype=torch.float).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights_tensor)
     
-    # Optimizer & Scheduler
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': Config.weight_decay},
@@ -249,18 +257,16 @@ def train_and_predict():
     scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
     scaler = torch.cuda.amp.GradScaler(enabled=Config.fp16)
     
-    # Vòng lặp huấn luyện (Training Loop)
     best_macro_f1 = 0.0
-    best_val_preds = None
-    best_model_weights = None
+    best_val_probs = None
+    save_model_path = f"best_model_fold_{fold}.pt"
     
-    print("\n--> 2. Bắt đầu huấn luyện...")
     for epoch in range(Config.epochs):
         model.train()
         total_train_loss = 0.0
         optimizer.zero_grad()
         
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{Config.epochs}")
+        pbar = tqdm(train_loader, desc=f"Fold {fold} - Epoch {epoch+1}/{Config.epochs}")
         for step, batch in enumerate(pbar):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
@@ -287,7 +293,7 @@ def train_and_predict():
             
         avg_train_loss = total_train_loss / len(train_loader)
         
-        # Đánh giá trên Validation (Validation Phase)
+        # Validation
         model.eval()
         val_preds_list = []
         val_targets_list = []
@@ -316,28 +322,28 @@ def train_and_predict():
         epoch_macro_f1 = f1_score(val_targets, val_pred_labels, average="macro")
         f1_per_class = f1_score(val_targets, val_pred_labels, average=None)
         
-        print(f"\n[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | Val Loss: {(val_loss/len(val_loader)):.4f}")
-        print(f" ⭐ MACRO F1: {epoch_macro_f1:.4f}")
+        print(f"\n[Fold {fold} - Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | Val Loss: {(val_loss/len(val_loader)):.4f}")
+        print(f" ⭐ MACRO F1 FOLD {fold}: {epoch_macro_f1:.4f}")
         print(f"   -> F1 BENIGN: {f1_per_class[0]:.4f} | JAILBREAK: {f1_per_class[1]:.4f} | PROMPT_INJECTION: {f1_per_class[2]:.4f}")
         
         if epoch_macro_f1 > best_macro_f1:
             best_macro_f1 = epoch_macro_f1
-            best_val_preds = val_probs
-            print(f"   🔥 Điểm kỷ lục mới! Đang lưu checkpoint...")
-            torch.save(model.state_dict(), "best_xlm_roberta_large.pt")
+            best_val_probs = val_probs
+            print(f"   🔥 Kỷ lục mới của Fold {fold}! Lưu weights vào {save_model_path}...")
+            torch.save(model.state_dict(), save_model_path)
             
-    print(f"\n==========================================")
-    print(f"🏆 BEST VALIDATION MACRO F1: {best_macro_f1:.4f}")
-    print(f"==========================================")
+    print(f"\n=======================================================")
+    print(f"🏆 FOLD {fold} HOÀN TẤT | BEST VAL MACRO F1 = {best_macro_f1:.4f}")
+    print(f"=======================================================")
     
-    # Tải lại trọng số tốt nhất để dự đoán Test
-    model.load_state_dict(torch.load("best_xlm_roberta_large.pt"))
+    # Suy luận Test bằng checkpoint tốt nhất
+    model.load_state_dict(torch.load(save_model_path))
     model.eval()
     
-    print("\n--> 3. Đang suy luận trên tập Test...")
+    print(f"\n--> Đang suy luận tập Test cho Fold {fold}...")
     test_preds_list = []
     with torch.no_grad():
-        for batch in tqdm(test_loader, desc="Inference"):
+        for batch in tqdm(test_loader, desc=f"Inference Fold {fold}"):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             with torch.cuda.amp.autocast(enabled=Config.fp16):
@@ -347,22 +353,29 @@ def train_and_predict():
             
     test_probs = np.vstack(test_preds_list)
     
-    # Lưu xác suất test và validation để dùng ensemble ở các bước sau
-    np.save("test_probs_large.npy", test_probs)
-    np.save("val_probs_large.npy", best_val_preds)
+    # -------------------------------------------------------------
+    # LƯU FILE KẾT QUẢ ĐỂ GỘP 5 FOLD (CRUCIAL OUTPUTS)
+    # -------------------------------------------------------------
+    test_probs_filename = f"test_probs_fold_{fold}.npy"
+    val_probs_filename = f"val_probs_fold_{fold}.npy"
+    sub_filename = f"submission_fold_{fold}.csv"
     
-    # Xuất file submission
+    np.save(test_probs_filename, test_probs)
+    np.save(val_probs_filename, best_val_probs)
+    
+    # Xuất submission riêng của fold này
     test_pred_labels = np.argmax(test_probs, axis=1)
     submission = pd.DataFrame({
         "id": test_df["id"],
         "label": [INV_LABEL_MAP[p] for p in test_pred_labels]
     })
+    submission.to_csv(sub_filename, index=False)
     
-    submission.to_csv("submission.csv", index=False)
-    print("--> 4. Đã lưu submission.csv thành công!")
-    print(f"--> Kiểm tra số dòng: {len(submission)} (kỳ vọng 6000)")
-    print(submission["label"].value_counts())
-    print("\n[Hoàn thành! Bạn có thể tải file submission.csv để nộp ngay lên Kaggle]")
+    print(f"\n🎉 THÀNH CÔNG! ĐÃ XUẤT CÁC FILE CHO FOLD {fold}:")
+    print(f" 1. {test_probs_filename}  <-- Gửi file này để gộp 5 fold!")
+    print(f" 2. {val_probs_filename}")
+    print(f" 3. {sub_filename} (Có thể nộp thử nếu muốn)")
+    print(f"=======================================================\n")
 
 if __name__ == "__main__":
-    train_and_predict()
+    train_fold()
