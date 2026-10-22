@@ -14,7 +14,7 @@
 |---|---|
 | Sự kiện ngày 22–23/10/2026, lịch công bố 08:00–18:00 ngày 22 và 08:00–12:00 ngày 23 | Có trên [website chính thức](https://rmit-hackathon.com/). Team ở Việt Nam cần đối chiếu lịch tại campus; không dùng lịch sự kiện thay deadline Kaggle |
 | Đội 4 sinh viên; mọi thành viên có mặt cùng địa điểm; một warm-up và hai challenge; ngôn ngữ English | Có trên [website chính thức](https://rmit-hackathon.com/) |
-| Đề cụ thể, metric, số dòng, danh sách model, hạn nộp, quota | **Chưa xác minh trực tiếp**: [Kaggle Overview](https://www.kaggle.com/competitions/rmit-hackathon-2026/overview) chỉ tải được tiêu đề, không tải được nội dung trong phiên kiểm tra |
+| Metric macro F1; định dạng `id,label` (6.000 dòng + header); 10 model được duyệt, không dùng backbone ngoài danh sách; quota 6 lượt/ngày cho cả team; đủ điểm C1 khi nộp bài hợp lệ đầu tiên; tên notebook `<uni>_<campus>_<team>_C1` và dòng đầu `# MODEL: ...` | **Đã xác nhận trên giao diện Kaggle (người dùng cung cấp lúc 10:39)**. A vẫn lưu ảnh chụp/URL vào `rules.md`. Hạn nộp chính xác, số bản được chọn final, và việc có được đổi backbone giữa các run hay không: **vẫn cần xác nhận** |
 | C1 là phân loại `BENIGN/JAILBREAK/PROMPT_INJECTION`; train 14.000, test 6.000; macro F1; luật một backbone | Ghi chép trong `PLAN.md` của workspace, **dùng làm giả định làm việc**, chưa coi là xác nhận của BTC |
 | Deadline C1 18:00 ngày 22/10; 6 lượt nộp/ngày; public/private 30/70; nộp qua notebook | Ghi chép cũ trong `PLAN.md`; A phải xác nhận trên Kaggle trước khi chốt lịch và chiến lược |
 | C2/C3 chạy trên RACE Cloud; nộp một file là đủ điểm C1 | Chỉ có trong ghi chép cũ; **không mặc định đúng** trước khi thấy brief/rubric chính thức |
@@ -39,7 +39,7 @@
 | Nộp CSV hay notebook; notebook có cần Internet off, chia sẻ hoặc đặt tên theo mẫu? | … | Submission instructions |
 | C2/C3: giờ ra đề, deadline, nền tảng, tài khoản, đầu ra, trọng số | … | Brief tại sự kiện / thông báo BTC |
 
-**Trong lúc chưa rõ luật một backbone:** chỉ chuẩn bị một backbone dự kiến hợp lệ; chưa train thử backbone thứ hai, chưa ghép ensemble, chưa dùng dữ liệu ngoài hoặc suy nhãn từ test. A cần lưu URL hoặc nội dung trả lời của BTC nếu luật có điểm mơ hồ.
+**Luật backbone:** Kaggle ghi phải xây giải pháp trên một trong 10 model được duyệt, không dùng backbone khác. Cách hiểu an toàn: **chọn một backbone duy nhất cho toàn bộ bài nộp**. Ensemble nhiều fold/seed của cùng backbone là hợp lý. Chưa rõ Sub #1 bằng `xlm-roberta-base` rồi Sub sau bằng `xlm-roberta-large` có được tính là hai backbone hay không. **A phải hỏi BTC trên Discussion**; trong lúc chờ, nếu lo rủi ro thì chạy Sub #1 bằng chính `xlm-roberta-large` (MAXLEN 256, 1 epoch, LR `1e-5`) thay vì base. Chưa dùng dữ liệu ngoài hoặc suy nhãn từ test. A cần lưu URL hoặc nội dung trả lời của BTC nếu luật có điểm mơ hồ.
 
 ## 3. Phân công tổng thể
 
@@ -49,6 +49,19 @@
 | **B** | Chủ mô hình và pipeline huấn luyện | PyTorch/Transformers, xử lý GPU | Notebook train chuẩn, checkpoint tốt nhất, xác suất validation/test | C |
 | **C** | Thí nghiệm có kiểm soát, hỗ trợ train, đầu mối challenge tiếp theo | Python/ML, thử nghiệm nhanh, sửa lỗi môi trường | Báo cáo so sánh cấu hình, run bổ sung, brief C2/C3 khi có | B |
 | **D** | Dữ liệu, validation, phân tích lỗi, tích hợp | pandas/sklearn, cẩn thận với ID và metric | Fold dùng chung, báo cáo dữ liệu, OOF, kiểm tra submission | A |
+
+### Phân chia lại để ai cũng train và ai cũng có phần việc riêng (bản cân bằng)
+
+Nguyên tắc: **cả 4 người đều chạy GPU trên tài khoản Kaggle của mình** (4 quota song song) và mỗi người sở hữu thêm một đầu việc không phải train. Không ai chỉ chờ người khác.
+
+| Người | Chạy GPU (dự kiến, sửa theo ETA) | Việc sở hữu thêm | Dự phòng |
+|---|---|---|---|
+| **A** | Baseline xlm-r-base (Sub #1) → fold 4 large | Luật, sổ nộp bài, theo dõi brief; kiểm tra checklist thủ tục | D |
+| **B** | Large fold 0 → fold 1 | Notebook train chuẩn, đo ETA/VRAM, checkpoint | C |
+| **C** | E2/E3 trên fold 0 (head+tail, weighted CE, cùng backbone) → fold 2 → fold 3 | Báo cáo so sánh thí nghiệm; đầu mối brief C2/C3 | B |
+| **D** | Phát hành split trước 10:45 rồi chạy seed bổ sung fold 0 (hoặc fold còn thiếu) | Data report, phân tích lỗi, notebook OOF/tune/ensemble, kiểm tra file nộp | A |
+
+Khối lượng: A ≈ 2 run + admin; B ≈ 2 run + pipeline; C ≈ 3 run nhỏ/vừa + báo cáo; D ≈ 1 run + data + ensemble. Nếu D bị nghẽn ở ensemble, A nhận fold bổ sung thay D; nếu có C2/C3 thì C và D chuyển sang đó sau khi bàn giao run đang chạy (mục 12).
 
 **Luồng bàn giao:** D giao dữ liệu và fold → B/C/A chạy theo cùng quy ước → D kiểm tra và tích hợp → A nộp → A ghi kết quả và báo lại nhóm.
 
@@ -80,7 +93,8 @@ Không để một người vừa train mọi thứ, vừa kiểm tra, vừa n�
 
 ### Trước run dài
 
-- [ ] Kiểm tra backbone nằm trong danh sách được duyệt; checkpoint/tokenizer khớp nhau.
+- [ ] Kiểm tra backbone nằm trong danh sách được duyệt; checkpoint/tokenizer khớp nhau. Đường dẫn large: `/kaggle/input/models/aisuko/xlm-roberta-large/transformers/default/1` (xác nhận bằng `!ls`). Dòng đầu notebook: `# MODEL: FacebookAI/xlm-roberta-large`; tên notebook `<uni>_<campus>_<team>_C1`.
+- [ ] Cấu hình chống sập: LR `1e-5` (hoặc `8e-6`), `warmup_ratio=0.1`, `max_grad_norm=1.0`, `save_total_limit=1`, `save_only_model=True`.
 - [ ] Nhận fold manifest và label map từ D; không tự chia lại dữ liệu.
 - [ ] Chạy smoke test trên một tập nhỏ để kiểm tra đọc dữ liệu, forward/backward, lưu và nạp checkpoint, predict và export.
 - [ ] Đo thời gian step/epoch và VRAM trên GPU thực tế. Hai GPU không tự động làm batch hay tốc độ tăng gấp đôi.
@@ -156,6 +170,7 @@ Không cam kết các tham số này sẽ đạt mức F1 cụ thể. Kiểm tra
 - OOF là xác suất của từng mẫu train từ mô hình **không train trên mẫu đó**. Mỗi ID phải có dự đoán hợp lệ; không điền thiếu bằng 0.
 - Nếu chỉ đủ một số fold, đánh giá phần validation được phủ và gọi đúng là partial OOF; không báo đó là 5-fold CV đầy đủ.
 - Khi so các candidate, dùng chung phần validation để so sánh công bằng.
+- Chỉ áp trọng số lớp `[1,a,b]` khi macro F1 trên OOF/validation tăng ít nhất +0.005 và `a,b` nằm trong khoảng [0.7, 1.8]; hệ số lên 2.5–3.0 là dấu hiệu overfit lớp hiếm, giữ mặc định `[1,1,1]`.
 - Nếu tune trọng số xác suất/ngưỡng, dùng grid nhỏ; báo cả điểm chưa tune và sau tune. Điểm trên chính tập dùng để tune có thiên lệch lạc quan; ưu tiên kiểm tra trên fold độc lập hoặc giữ hệ số mặc định khi lợi ích không ổn định.
 - Việc lấy trung bình test probability của nhiều fold không đồng nghĩa OOF đã đo chính xác hiệu quả của ensemble đó; ghi rõ giới hạn khi kết luận.
 - Không áp quy tắc lấy nhãn train cho test trùng nếu chưa xác nhận điều lệ cho phép.
@@ -171,9 +186,9 @@ Không cam kết các tham số này sẽ đạt mức F1 cụ thể. Kiểm tra
 | 10:05–10:20 | Chốt luật, team, quota, deadline | Kiểm tra GPU/model/môi trường | Hỗ trợ môi trường; đọc brief hiện có | Kiểm tra dữ liệu và nhãn | Biết rõ đề và việc được phép |
 | 10:20–10:45 | Baseline trên backbone đã chốt | Smoke test + đo ETA | Kiểm tra cấu hình nhẹ hoặc hỗ trợ B | Phát hành split và data report | Notebook chạy end-to-end trên mẫu nhỏ |
 | 10:45–11:00 | Nộp baseline khi đủ điều kiện | Bắt đầu run chính | Một thí nghiệm ưu tiên | Kiểm tra output baseline | Submission đầu đã chấm thành công hoặc có ETA rõ |
-| 11:00–12:15 | Sổ nộp bài, theo dõi brief | Train/validation run chính | Run đối chứng; dừng nếu ETA vượt hạn | Phân tích baseline và mẫu lỗi | Có metric cùng split, không chỉ loss |
+| 11:00–12:15 | Sổ nộp bài, theo dõi brief; chạy fold 4 large nếu GPU rảnh | Train/validation run chính (fold 0) | Run đối chứng E2/E3 trên fold 0; dừng nếu ETA vượt hạn | Chạy seed bổ sung trên GPU của mình; phân tích baseline và mẫu lỗi | Có metric cùng split, không chỉ loss |
 | 12:15–12:30 | Họp quyết định 10 phút | Báo kết quả/ETA | Báo so sánh/ETA | Báo lỗi, độ tin cậy split | Chốt cấu hình; chia fold hoặc giảm phạm vi |
-| 12:30–14:30 | Hỗ trợ run hoặc challenge mới | Fold bổ sung theo ETA | Fold bổ sung hoặc C2/C3 | Nhận artifact, chuẩn bị integration | Có candidate mạnh hơn baseline nếu thực nghiệm ủng hộ |
+| 12:30–14:30 | Fold 4 (nếu chưa xong), theo dõi brief | Fold 1 | Fold 2 (rồi 3), hoặc C2/C3 | Viết notebook OOF/ensemble trong lúc seed bổ sung chạy; nhận artifact | Có candidate mạnh hơn baseline nếu thực nghiệm ủng hộ |
 | 14:30–15:00 | Nộp candidate nếu tốt hơn rõ | Hoàn tất output/checkpoint | Kiểm tra run/challenge mới | So sánh công bằng và kiểm tra ID | Có bản dự phòng mạnh đã nộp |
 | 15:00–16:00 | Gom tài liệu, kiểm tra quota | Hoàn thành run khả thi | Không mở hướng nghiên cứu dài mới | Ghép OOF, ensemble nếu hợp lệ | Candidate final đầu tiên sẵn sàng |
 | 16:00–16:30 | Nộp candidate final đầu tiên | Hỗ trợ rerun/inference | Kiểm tra khả năng chạy lại | Kiểm tra file và notebook | Đã có final an toàn trước hạn |
@@ -188,7 +203,7 @@ Nghỉ ăn/nghỉ ngắn luân phiên khi job đang chạy; không để ngườ
 - Sau pilot, tính thời gian còn lại đến mốc đóng thí nghiệm, trừ ít nhất 30–45 phút cho inference, lưu output và tích hợp; tăng buffer nếu đã đo thấy chậm.
 - Ước lượng số run theo thời lượng thực tế và GPU thực sự khả dụng, không theo quota quảng cáo.
 - Nếu chỉ đủ 1 holdout + 1 seed bổ sung thì làm tốt hai run đó; không bắt buộc 5 fold.
-- Nếu đủ 5 fold và luật cho phép: B chạy fold 0 rồi 1; C chạy fold 2 rồi 3; A chạy fold 4 sau baseline; D tích hợp. Đây là phân công dự kiến, cần sửa theo ETA và các challenge khác.
+- Nếu đủ 5 fold và luật cho phép: B chạy fold 0 rồi 1; C chạy fold 2 rồi 3; A chạy fold 4 sau baseline; D chạy seed bổ sung/fold còn thiếu trong lúc viết notebook ensemble rồi tích hợp. Đây là phân công dự kiến, cần sửa theo ETA và các challenge khác.
 
 ## 9. Danh sách thí nghiệm và điều kiện dừng
 
@@ -321,8 +336,9 @@ Nếu có pitch: chuẩn bị 5–6 phần ngắn gồm vấn đề, cách làm,
 | Kaggle/luật không truy cập được | A | Dùng trình duyệt/tài khoản tại venue hoặc hỏi hỗ trợ BTC; chưa dùng kỹ thuật phụ thuộc điều khoản chưa rõ |
 | Chưa có bài hợp lệ trước 11:00 | A+B | Tạm dừng tối ưu; sửa schema/inference/notebook; ưu tiên bản nhỏ chạy được trên backbone hợp lệ |
 | GPU unavailable/quota thấp | A+C | Đo tài nguyên thật; giảm số run, batch/length hoặc dùng CPU cho kiểm tra/EDA; đổi model chỉ khi luật cho phép |
-| OOM | B/C | Giảm batch, tăng accumulation, bật gradient checkpointing nếu phù hợp; đo lại ETA |
-| Loss NaN / dự đoán một lớp | B+D | Kiểm tra label map, batch, dữ liệu, LR và gradient; so confusion matrix với baseline; không mặc định chỉ cần đổi seed |
+| OOM | B/C | Giảm batch xuống 4, tăng accumulation, bật `gradient_checkpointing=True` (chậm hơn khoảng 20–30%); đo lại ETA |
+| Loss NaN / dự đoán một lớp (F1 khoảng 0.26) | B+D | XLM-R large nhạy với LR: dùng `1e-5` hoặc `8e-6`, `warmup_ratio=0.1`, `max_grad_norm=1.0`; kiểm tra label map, dữ liệu; đổi seed; nếu vẫn lỗi chạy thử bản base để tách lỗi pipeline khỏi lỗi model |
+| Đầy ổ `/kaggle/working` (giới hạn khoảng 20GB, mỗi checkpoint large khoảng 2GB) | B/C | `save_total_limit=1`, `save_only_model=True`; mỗi fold chạy ở notebook riêng, chỉ giữ `.npy` và CSV cần thiết |
 | Train chậm hơn dự kiến | B | Giao checkpoint/output đã có; giảm epoch/fold; không mở job vượt mốc đóng thí nghiệm |
 | Trùng train–validation | D | Sửa split/version và đánh giá lại; không so trực tiếp metric từ hai split khác nhau |
 | Fold không hoàn thành | D | Dùng các run hợp lệ còn lại nếu luật cho phép; báo partial coverage đúng thực tế |
