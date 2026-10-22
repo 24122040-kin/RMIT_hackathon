@@ -43,6 +43,7 @@ class Config:
     # - Thành viên 1 (fold đầu):       target_folds = [0]
     # - Thành viên 2 (2 fold cuối):    target_folds = [1, 2]   (hoặc [3, 4] nếu chia 5 fold)
     target_folds = [0]
+    target_fold = 0         # alias tương thích
     # -------------------------------------------------------------
     
     n_splits = 3            # Chia 3 Fold (phù hợp 2 người: người 1 chạy fold 0, người 2 chạy fold 1, 2)
@@ -87,8 +88,8 @@ def seed_everything(seed=42):
 seed_everything(Config.seed)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"==========================================================")
-print(f"--> Đang chạy FOLD: {Config.target_fold} / {Config.n_splits - 1}")
-print(f"--> Số Epochs: {Config.epochs}")
+print(f"--> Các FOLD sẽ chạy trong phiên này: {Config.target_folds} (Tổng {Config.n_splits} folds)")
+print(f"--> Số Epochs mỗi fold: {Config.epochs}")
 print(f"--> Thiết bị sử dụng: {device}")
 print(f"==========================================================")
 
