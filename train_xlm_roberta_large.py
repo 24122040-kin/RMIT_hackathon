@@ -71,19 +71,49 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"--> Using device: {device}")
 
 # ==============================================================================
-# 2. ĐƯỜNG DẪN DỮ LIỆU
+# 2. HỆ THỐNG TỰ ĐỘNG DÒ TÌM ĐƯỜNG DẪN DATA & MODEL TRÊN KAGGLE
 # ==============================================================================
-# Tự động nhận diện chạy trên Kaggle hay Local
-if os.path.exists("/kaggle/input/rmit-hackathon-2026/train.csv"):
-    DATA_DIR = "/kaggle/input/rmit-hackathon-2026"
-elif os.path.exists("./data/train.csv"):
-    DATA_DIR = "./data"
-else:
-    DATA_DIR = "."
+def find_file_recursively(filename, default_dir="."):
+    # 1. Thử đường dẫn mặc định
+    local_path = os.path.join(default_dir, filename)
+    if os.path.exists(local_path):
+        return local_path
+    if os.path.exists(filename):
+        return filename
+    
+    # 2. Quét toàn bộ cây thư mục /kaggle/input
+    if os.path.exists("/kaggle/input"):
+        for root, dirs, files in os.walk("/kaggle/input"):
+            if filename in files:
+                found_path = os.path.join(root, filename)
+                print(f"--> [AUTO-FOUND] Đã tìm thấy {filename} tại: {found_path}")
+                return found_path
+                
+    raise FileNotFoundError(f"Không thể tìm thấy file '{filename}' trong /kaggle/input hay thư mục hiện tại! Hãy kiểm tra xem bạn đã add dataset vào notebook chưa.")
 
-TRAIN_PATH = os.path.join(DATA_DIR, "train.csv")
-TEST_PATH = os.path.join(DATA_DIR, "test.csv")
-SAMPLE_SUB_PATH = os.path.join(DATA_DIR, "sample_submission.csv")
+def find_model_dir():
+    # Quét tìm thư mục model xlm-roberta-large trong /kaggle/input
+    if os.path.exists("/kaggle/input"):
+        print("\n=== CẤU TRÚC THƯ MỤC /kaggle/input HIỆN TẠI ===")
+        for root, dirs, files in os.walk("/kaggle/input"):
+            level = root.replace("/kaggle/input", "").count(os.sep)
+            indent = " " * 4 * level
+            print(f"{indent}📁 {os.path.basename(root)}/")
+            for f in files[:4]:
+                print(f"{indent}    📄 {f}")
+        print("===================================================\n")
+        
+        for root, dirs, files in os.walk("/kaggle/input"):
+            if "config.json" in files and ("pytorch_model.bin" in files or "model.safetensors" in files or "sentencepiece.bpe.model" in files):
+                print(f"--> [AUTO-FOUND] Đã tìm thấy Model offline tại: {root}")
+                return root
+                
+    print("--> [INFO] Không tìm thấy model offline trong /kaggle/input, sử dụng 'FacebookAI/xlm-roberta-large' tải trực tuyến.")
+    return "FacebookAI/xlm-roberta-large"
+
+TRAIN_PATH = find_file_recursively("train.csv", default_dir="./data")
+TEST_PATH = find_file_recursively("test.csv", default_dir="./data")
+SAMPLE_SUB_PATH = find_file_recursively("sample_submission.csv", default_dir="./data")
 
 LABEL_MAP = {"BENIGN": 0, "JAILBREAK": 1, "PROMPT_INJECTION": 2}
 INV_LABEL_MAP = {v: k for k, v in LABEL_MAP.items()}
@@ -139,15 +169,8 @@ class PromptHeadTailDataset(Dataset):
 # 4. CHUẨN BỊ MÔ HÌNH VÀ TOKENIZER
 # ==============================================================================
 def get_model_and_tokenizer():
-    model_source = Config.model_name_or_path
-    for path in Config.kaggle_candidate_paths:
-        if os.path.exists(path):
-            model_source = path
-            print(f"--> [OK] Tìm thấy model offline tại Kaggle: {model_source}")
-            break
-    else:
-        print(f"--> [INFO] Không thấy thư mục offline, tải trực tiếp từ HuggingFace: {model_source}")
-        
+    model_source = find_model_dir()
+    print(f"--> Đang nạp Model & Tokenizer từ: {model_source}")
     tokenizer = AutoTokenizer.from_pretrained(model_source)
     config = AutoConfig.from_pretrained(model_source, num_labels=Config.num_classes)
     model = AutoModelForSequenceClassification.from_pretrained(model_source, config=config)
