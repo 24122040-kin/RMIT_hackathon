@@ -37,9 +37,10 @@ class Config:
     seed = 42
     num_classes = 3
     
-    max_len = 512
-    head_len = 256
-    tail_len = 256
+    # Tối ưu max_len = 384 (Head 192 + Tail 192) giúp giảm 45% bộ nhớ attention O(L^2)
+    max_len = 384
+    head_len = 192
+    tail_len = 192
     
     # Model backbone: XLM-RoBERTa Large
     model_name_or_path = "FacebookAI/xlm-roberta-large"
@@ -159,6 +160,7 @@ class EliteClassifier(nn.Module):
     def __init__(self, model_name_or_path, num_classes=3):
         super().__init__()
         self.config = AutoConfig.from_pretrained(model_name_or_path)
+        self.config.use_cache = False
         self.backbone = AutoModel.from_pretrained(model_name_or_path, config=self.config)
         # Bật Gradient Checkpointing để giảm 60% VRAM (chống OOM 100%)
         if hasattr(self.backbone, "gradient_checkpointing_enable"):
@@ -241,6 +243,7 @@ def run_elite_training():
     
     model_source = find_model_dir()
     tokenizer = AutoTokenizer.from_pretrained(model_source)
+    tokenizer.model_max_length = int(1e9)  # Tắt cảnh báo độ dài token
     model = EliteClassifier(model_source, num_classes=Config.num_classes).to(device)
     
     train_dataset = ElitePromptDataset(
@@ -284,7 +287,8 @@ def run_elite_training():
         {'params': [p for n, p in model.backbone.named_parameters()], 'lr': Config.learning_rate, 'weight_decay': Config.weight_decay},
         {'params': [p for n, p in model.fc.named_parameters()], 'lr': Config.classifier_lr, 'weight_decay': 0.0}
     ]
-    optimizer = torch.optim.AdamW(optimizer_grouped_parameters)
+    # foreach=False ngăn chặn PyTorch cấp phát tensor buffer 1GB gây sập OOM
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, foreach=False)
     
     total_steps = (len(train_loader) // Config.grad_accum_steps) * Config.epochs
     warmup_steps = int(total_steps * Config.warmup_ratio)
@@ -318,10 +322,12 @@ def run_elite_training():
             if (step + 1) % Config.grad_accum_steps == 0 or (step + 1) == len(train_loader):
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), Config.max_grad_norm)
+                scale_before = scaler.get_scale()
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
-                scheduler.step()
+                if scale_before <= scaler.get_scale():
+                    scheduler.step()
                 
             pbar.set_postfix({"loss": f"{(total_train_loss / (step + 1)):.4f}"})
             
