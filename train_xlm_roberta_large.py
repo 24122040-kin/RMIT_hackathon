@@ -46,7 +46,7 @@ class Config:
     target_fold = 0         # alias tương thích
     # -------------------------------------------------------------
     
-    n_splits = 3            # Chia 3 Fold (phù hợp 2 người: người 1 chạy fold 0, người 2 chạy fold 1, 2)
+    n_splits = 5            # Chuẩn 5 Fold (Fold 0, 1, 2, 3, 4)
     seed = 42
     epochs = 2              # 2 Epochs/fold
     num_classes = 3
@@ -204,6 +204,9 @@ def train_fold(fold):
     skf = StratifiedKFold(n_splits=Config.n_splits, shuffle=True, random_state=Config.seed)
     
     splits = list(skf.split(train_df, train_df["strat_key"]))
+    if fold >= len(splits):
+        raise IndexError(f"LỖI: Bạn đang chạy Fold {fold} nhưng n_splits hiện tại chỉ là {len(splits)} (các fold hợp lệ là 0 đến {len(splits)-1})! Hãy sửa lại Config.n_splits = 5.")
+        
     train_idx, val_idx = splits[fold]
     
     trn_data = train_df.iloc[train_idx].reset_index(drop=True)
