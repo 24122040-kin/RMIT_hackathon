@@ -25,6 +25,8 @@ from transformers import (
     get_cosine_schedule_with_warmup
 )
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 # ==============================================================================
 # 1. CẤU HÌNH SIÊU THAM SỐ (CONFIG)
 # ==============================================================================
@@ -42,8 +44,9 @@ class Config:
     # Model backbone: XLM-RoBERTa Large
     model_name_or_path = "FacebookAI/xlm-roberta-large"
     
-    batch_size = 8
-    grad_accum_steps = 2    # Effective batch = 16
+    # Giảm batch_size xuống 4 và bật Gradient Checkpointing -> Tiết kiệm 60% VRAM (chỉ dùng ~6GB)
+    batch_size = 4
+    grad_accum_steps = 4    # Effective batch = 16 (4 x 4)
     learning_rate = 1.5e-5  # Backbone LR
     classifier_lr = 5e-5    # Custom Head LR
     weight_decay = 0.01
@@ -157,6 +160,10 @@ class EliteClassifier(nn.Module):
         super().__init__()
         self.config = AutoConfig.from_pretrained(model_name_or_path)
         self.backbone = AutoModel.from_pretrained(model_name_or_path, config=self.config)
+        # Bật Gradient Checkpointing để giảm 60% VRAM (chống OOM 100%)
+        if hasattr(self.backbone, "gradient_checkpointing_enable"):
+            self.backbone.gradient_checkpointing_enable()
+            
         hidden_size = self.config.hidden_size  # 1024 đối với XLM-R Large
         
         # Concat Pooling: CLS (1024) + Mean Pool (1024) + Max Pool (1024) = 3072 features
@@ -282,7 +289,7 @@ def run_elite_training():
     total_steps = (len(train_loader) // Config.grad_accum_steps) * Config.epochs
     warmup_steps = int(total_steps * Config.warmup_ratio)
     scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
-    scaler = torch.cuda.amp.GradScaler(enabled=Config.fp16)
+    scaler = torch.amp.GradScaler('cuda', enabled=Config.fp16)
     
     best_macro_f1 = 0.0
     best_val_probs = None
@@ -300,7 +307,7 @@ def run_elite_training():
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["labels"].to(device)
             
-            with torch.cuda.amp.autocast(enabled=Config.fp16):
+            with torch.amp.autocast('cuda', enabled=Config.fp16):
                 logits = model(input_ids, attention_mask)
                 loss = criterion(logits, labels)
                 loss = loss / Config.grad_accum_steps
@@ -332,7 +339,7 @@ def run_elite_training():
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["labels"].to(device)
                 
-                with torch.cuda.amp.autocast(enabled=Config.fp16):
+                with torch.amp.autocast('cuda', enabled=Config.fp16):
                     logits = model(input_ids, attention_mask)
                     loss = criterion(logits, labels)
                     val_loss += loss.item()
@@ -393,7 +400,7 @@ def run_elite_training():
         for batch in tqdm(test_loader, desc="Inference"):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
-            with torch.cuda.amp.autocast(enabled=Config.fp16):
+            with torch.amp.autocast('cuda', enabled=Config.fp16):
                 logits = model(input_ids, attention_mask)
                 probs = torch.softmax(logits, dim=-1).cpu().numpy()
             test_preds_list.append(probs)
