@@ -1,0 +1,21 @@
+task_id,owner,backup,task,deadline_VN,status,deliverable,depends_on
+T01,A,D,Xác nhận brief metric deadline quota và luật model,22/10 10:20,TODO,rules.md,
+T02,A,D,Xác nhận team đủ 4 người và quyền truy cập hợp lệ,22/10 10:20,TODO,Team và nơi bàn giao,
+T03,D,A,Kiểm tra schema nhãn ID thiếu trùng và phân bố,22/10 10:35,TODO,data_report.md,
+T04,D,A,Phát hành fold manifest và label map dùng chung,22/10 10:45,TODO,folds.csv + label_map.json,T03
+T05,B,C,Smoke test pipeline và đo GPU runtime ETA,22/10 10:45,TODO,Notebook chuẩn + ETA,T01
+T06,A,B,Chạy baseline và xuất candidate đầu tiên,22/10 10:55,TODO,Predictions + submission,T04 + T05
+T07,D,A,Kiểm tra candidate baseline,22/10 10:55,TODO,Checklist đã kiểm tra,T06
+T08,A,D,Nộp baseline và xác nhận chấm thành công,22/10 11:00,TODO,Submission ID + version,T07
+T09,B,C,Train mô hình chính trên split chung,22/10 12:15 hoặc theo ETA,TODO,Config metrics checkpoint predictions,T04 + T05
+T10,C,B,Thí nghiệm một yếu tố theo mức ưu tiên,22/10 12:15 hoặc theo ETA,TODO,Báo cáo so sánh + artifacts,T04 + T05
+T11,D,A,Phân tích lỗi từng lớp ngôn ngữ và độ dài,22/10 12:15,TODO,Error report + support,T06
+T12,A,D,Chốt cấu hình số run và phân bổ challenge,22/10 12:30,TODO,Quyết định + người nhận fold,T09 + T10 + T11
+T13,B,C,Hoàn thiện run bổ sung phù hợp ETA,22/10 15:00,TODO,Artifacts theo hợp đồng,T12
+T14,C,B,Run bổ sung hoặc đọc brief challenge mới,22/10 15:00,TODO,Artifacts hoặc brief challenge,T12
+T15,D,A,Kiểm tra predictions và tích hợp nếu được phép,22/10 16:00,TODO,Candidate + manifest + metrics,T13 + T14
+T16,A,D,Nộp candidate final an toàn,22/10 16:30,TODO,Submission đã chấm thành công,T15
+T17,D,A,Kiểm tra độc lập notebook file và final,22/10 17:00,TODO,FINAL CHECKED + version,T16
+T18,A,D,Chọn final đúng luật và lưu trạng thái,22/10 17:30,TODO,Final submission ID + bằng chứng,T17
+T19,B,C,Lưu checkpoint môi trường và cấu hình tái lập,22/10 17:30,TODO,Artifact locations + config,T13
+T20,A,D,Tổng hợp kết quả và bàn giao challenge còn mở,22/10 18:00,TODO,final_summary.md + owner phần còn lại,T18 + T19
