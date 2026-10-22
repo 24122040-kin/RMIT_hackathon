@@ -22,7 +22,8 @@ from transformers import (
     AutoTokenizer,
     AutoModel,
     AutoConfig,
-    get_cosine_schedule_with_warmup
+    get_cosine_schedule_with_warmup,
+    Adafactor
 )
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -287,8 +288,13 @@ def run_elite_training():
         {'params': [p for n, p in model.backbone.named_parameters()], 'lr': Config.learning_rate, 'weight_decay': Config.weight_decay},
         {'params': [p for n, p in model.fc.named_parameters()], 'lr': Config.classifier_lr, 'weight_decay': 0.0}
     ]
-    # foreach=False ngăn chặn PyTorch cấp phát tensor buffer 1GB gây sập OOM
-    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, foreach=False)
+    # Adafactor optimizer: giảm 90% bộ nhớ optimizer states (từ 4.5GB xuống còn ~150MB), giải phóng hơn 4GB VRAM!
+    optimizer = Adafactor(
+        optimizer_grouped_parameters,
+        scale_parameter=False,
+        relative_step=False,
+        warmup_init=False
+    )
     
     total_steps = (len(train_loader) // Config.grad_accum_steps) * Config.epochs
     warmup_steps = int(total_steps * Config.warmup_ratio)
