@@ -33,9 +33,15 @@ class Config:
     head_len = 256
     tail_len = 256
     
-    # Model backbone: ưu tiên tìm trong Kaggle dataset/model path, fallback sang HF hub
+    # Model backbone: Tự động quét các đường dẫn Kaggle Models mount thực tế
     model_name_or_path = "FacebookAI/xlm-roberta-large"
-    kaggle_model_path = "/kaggle/input/models/aisuko/xlm-roberta-large/transformers/default/1"
+    kaggle_candidate_paths = [
+        "/kaggle/input/xlm-roberta-large/transformers/default/1",
+        "/kaggle/input/models/aisuko/xlm-roberta-large/transformers/default/1",
+        "/kaggle/input/models/aisuko/xlm-roberta-large",
+        "/kaggle/input/xlm-roberta-large",
+        "FacebookAI/xlm-roberta-large"
+    ]
     
     # Training settings
     epochs = 3
@@ -134,11 +140,13 @@ class PromptHeadTailDataset(Dataset):
 # ==============================================================================
 def get_model_and_tokenizer():
     model_source = Config.model_name_or_path
-    if os.path.exists(Config.kaggle_model_path):
-        model_source = Config.kaggle_model_path
-        print(f"--> Found offline model at: {model_source}")
+    for path in Config.kaggle_candidate_paths:
+        if os.path.exists(path):
+            model_source = path
+            print(f"--> [OK] Tìm thấy model offline tại Kaggle: {model_source}")
+            break
     else:
-        print(f"--> Loading model from: {model_source}")
+        print(f"--> [INFO] Không thấy thư mục offline, tải trực tiếp từ HuggingFace: {model_source}")
         
     tokenizer = AutoTokenizer.from_pretrained(model_source)
     config = AutoConfig.from_pretrained(model_source, num_labels=Config.num_classes)
