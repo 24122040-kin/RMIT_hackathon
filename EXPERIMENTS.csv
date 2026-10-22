@@ -1,1 +1,0 @@
-run_id,owner,model_revision,data_version,split_version,fold,seed,change,macro_f1,f1_benign,f1_jailbreak,f1_prompt_injection,train_minutes,inference_minutes,status,artifact_path,decision
