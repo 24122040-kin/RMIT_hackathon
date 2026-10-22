@@ -39,13 +39,15 @@ from transformers import (
 # ==============================================================================
 class Config:
     # -------------------------------------------------------------
-    # THÀNH VIÊN SỬA DÒNG NÀY: CHỌN FOLD BẠN ĐƯỢC PHÂN CÔNG (0, 1, 2, 3, 4)
-    target_fold = 0
+    # THÀNH VIÊN SỬA DÒNG NÀY:
+    # - Thành viên 1 (fold đầu):       target_folds = [0]
+    # - Thành viên 2 (2 fold cuối):    target_folds = [1, 2]   (hoặc [3, 4] nếu chia 5 fold)
+    target_folds = [0]
     # -------------------------------------------------------------
     
-    n_splits = 5
+    n_splits = 3            # Chia 3 Fold (phù hợp 2 người: người 1 chạy fold 0, người 2 chạy fold 1, 2)
     seed = 42
-    epochs = 2              # 2 Epochs theo thống nhất của nhóm
+    epochs = 2              # 2 Epochs/fold
     num_classes = 3
     max_len = 512
     head_len = 256
@@ -67,11 +69,11 @@ class Config:
     # [BENIGN, JAILBREAK, PROMPT_INJECTION]
     class_weights = [0.7, 1.2, 3.2]
 
-# Hỗ trợ nhận fold từ dòng lệnh nếu chạy command: python train.py --fold 1
+# Hỗ trợ nhận fold từ dòng lệnh nếu chạy command: python train.py --folds 0 (hoặc --folds 1 2)
 parser = argparse.ArgumentParser()
-parser.add_argument("--fold", type=int, default=Config.target_fold)
+parser.add_argument("--folds", nargs="+", type=int, default=Config.target_folds)
 args, unknown = parser.parse_known_args()
-Config.target_fold = args.fold
+Config.target_folds = args.folds
 
 def seed_everything(seed=42):
     random.seed(seed)
@@ -187,8 +189,7 @@ def get_model_and_tokenizer():
 # ==============================================================================
 # 5. HUẤN LUYỆN FOLD ĐƯỢC CHỌN (TRAIN SPECIFIC FOLD)
 # ==============================================================================
-def train_fold():
-    fold = Config.target_fold
+def train_fold(fold):
     print(f"\n=======================================================")
     print(f"🚀 BẮT ĐẦU HUẤN LUYỆN FOLD {fold} (TỔNG {Config.epochs} EPOCHS)")
     print(f"=======================================================")
@@ -378,4 +379,10 @@ def train_fold():
     print(f"=======================================================\n")
 
 if __name__ == "__main__":
-    train_fold()
+    print(f"--> Danh sách các Fold cần chạy trong phiên này: {Config.target_folds}")
+    for fold in Config.target_folds:
+        train_fold(fold)
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    print("🏁 TẤT CẢ CÁC FOLD ĐƯỢC CHỈ ĐỊNH ĐÃ HOÀN TẤT!")
